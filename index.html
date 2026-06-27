@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lista de Pedido Semanal</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f0f2f5; color: #222; }
+
+  .header {
+    background: #1A5276;
+    color: white;
+    padding: 16px;
+    text-align: center;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  }
+  .header h1 { font-size: 18px; }
+  .header p { font-size: 12px; opacity: 0.8; margin-top: 4px; }
+  .header-status { font-size: 11px; margin-top: 6px; opacity: 0.7; }
+
+  .btn-refresh {
+    background: rgba(255,255,255,0.2);
+    border: 1px solid rgba(255,255,255,0.4);
+    color: white;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    margin-top: 8px;
+    cursor: pointer;
+  }
+
+  .loading {
+    text-align: center;
+    padding: 40px 20px;
+    color: #666;
+    font-size: 14px;
+  }
+  .loading .spinner {
+    width: 36px; height: 36px;
+    border: 4px solid #ddd;
+    border-top-color: #1E8449;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 12px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .error-box {
+    background: #fdecea;
+    border: 1px solid #f5c6cb;
+    border-radius: 10px;
+    margin: 16px;
+    padding: 14px;
+    font-size: 13px;
+    color: #721c24;
+    display: none;
+  }
+
+  .resumen {
+    background: white;
+    margin: 12px;
+    border-radius: 10px;
+    padding: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    display: none;
+  }
+  .resumen h2 { font-size: 14px; color: #1A5276; margin-bottom: 8px; border-bottom: 2px solid #1A5276; padding-bottom: 4px; }
+  .resumen-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .resumen-item {
+    background: #EBF5FB;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 13px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .resumen-item .badge {
+    background: #1E8449;
+    color: white;
+    border-radius: 12px;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: bold;
+    min-width: 28px;
+    text-align: center;
+  }
+  .badge.cero { background: #aaa; }
+  .total-general {
+    margin-top: 8px;
+    background: #1A5276;
+    color: white;
+    border-radius: 8px;
+    padding: 10px;
+    text-align: center;
+    font-size: 15px;
+    font-weight: bold;
+  }
+
+  .proveedores-container { display: none; }
+
+  .proveedor {
+    margin: 12px;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+  }
+  .proveedor-header {
+    background: #1E8449;
+    color: white;
+    padding: 12px 14px;
+    font-size: 15px;
+    font-weight: bold;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .proveedor-header .count {
+    background: rgba(255,255,255,0.25);
+    border-radius: 12px;
+    padding: 2px 10px;
+    font-size: 13px;
+  }
+  .sin-pedido .proveedor-header { background: #aaa; }
+
+  table { width: 100%; border-collapse: collapse; background: white; }
+  thead tr { background: #D5F5E3; }
+  thead th {
+    padding: 8px 10px;
+    font-size: 12px;
+    color: #145A32;
+    text-align: left;
+    border-bottom: 2px solid #1E8449;
+  }
+  thead th:last-child { text-align: right; }
+  tbody tr:nth-child(even) { background: #f9f9f9; }
+  tbody tr { border-bottom: 1px solid #eee; }
+  tbody td { padding: 10px; font-size: 14px; vertical-align: middle; }
+  .qty {
+    text-align: right;
+    font-weight: bold;
+    font-size: 16px;
+    color: #1A5276;
+    white-space: nowrap;
+  }
+  .unit { font-size: 11px; color: #888; margin-left: 2px; font-weight: normal; }
+
+  .check {
+    width: 24px; height: 24px;
+    border: 2px solid #1E8449;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 14px;
+    color: transparent;
+  }
+  td.check-col { width: 36px; }
+  tr.done td { opacity: 0.35; text-decoration: line-through; }
+  tr.done .check { background: #1E8449; border-color: #1E8449; color: white; }
+
+  .footer {
+    text-align: center;
+    padding: 20px;
+    color: #aaa;
+    font-size: 11px;
+  }
+
+  @media print {
+    .header { position: static; background: #1A5276 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .btn-refresh, .header-status { display: none; }
+    .proveedor-header { background: #1E8449 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    thead tr { background: #D5F5E3 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .check { display: none; }
+    td.check-col, th.check-col { display: none; }
+    .sin-pedido { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📋 Lista de Pedido Semanal</h1>
+  <p>Toca cada producto para marcarlo como comprado</p>
+  <div class="header-status" id="status">Cargando datos...</div>
+  <button class="btn-refresh" onclick="cargarTodo()">🔄 Actualizar</button>
+</div>
+
+<div class="loading" id="loading">
+  <div class="spinner"></div>
+  Cargando pedido desde el inventario...
+</div>
+
+<div class="error-box" id="error-box">
+  ⚠️ No se pudo cargar el inventario. Verifica tu conexión e intenta de nuevo.
+</div>
+
+<div class="resumen" id="resumen">
+  <h2>📊 Resumen por Proveedor</h2>
+  <div class="resumen-grid" id="resumen-grid"></div>
+  <div class="total-general" id="total-general"></div>
+</div>
+
+<div class="proveedores-container" id="proveedores-container"></div>
+
+<div class="footer">Lista de Pedido Semanal · Solo productos con pedido &gt; 0</div>
+
+<script>
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwZi-7fSZFxTWhFZ8b9rMijI88metfyE-2MRk0voob25Jk6sfMmWBeAeCHhW865cIF2/exec";
+
+const HOJAS = [
+  "🧀 Cremería",
+  "🥦 Verduras",
+  "🥩 Su Karne",
+  "🛒 Abarrote",
+  "🥤 Coca",
+  "🍉 Fruta",
+  "🌶️ Especias",
+  "🏪 Costco",
+];
+
+function parsearProductos(rows) {
+  const productos = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r[0]) continue;
+    const nombre = String(r[0]).trim();
+    if (!nombre || nombre.includes("TOTAL") || nombre.includes("📌") || nombre.includes("Producto") || nombre.includes("Semana")) continue;
+    const unidad = String(r[1] || "").trim();
+    const pedir  = parseFloat(String(r[4] || "0")) || 0;
+    if (nombre && pedir > 0) {
+      productos.push({ nombre, unidad, pedir });
+    }
+  }
+  return productos;
+}
+
+function toggle(row) {
+  row.classList.toggle("done");
+  const check = row.querySelector(".check");
+  check.innerHTML = row.classList.contains("done") ? "✓" : "";
+}
+
+function renderProveedor(nombre, productos) {
+  const div = document.createElement("div");
+  div.className = "proveedor" + (productos.length === 0 ? " sin-pedido" : "");
+
+  const hdr = document.createElement("div");
+  hdr.className = "proveedor-header";
+  hdr.innerHTML = `${nombre} <span class="count">${productos.length} artículos</span>`;
+  div.appendChild(hdr);
+
+  if (productos.length === 0) {
+    const p = document.createElement("div");
+    p.style.cssText = "background:white;padding:12px;font-size:13px;color:#aaa;text-align:center;";
+    p.textContent = "✅ Sin pedido esta semana";
+    div.appendChild(p);
+    return div;
+  }
+
+  const table = document.createElement("table");
+  table.innerHTML = `<thead><tr><th class="check-col"></th><th>Producto</th><th style="text-align:right">Cantidad</th></tr></thead>`;
+  const tbody = document.createElement("tbody");
+
+  productos.forEach(p => {
+    const tr = document.createElement("tr");
+    tr.onclick = function() { toggle(this); };
+    tr.innerHTML = `
+      <td class="check-col"><div class="check"></div></td>
+      <td>${p.nombre}</td>
+      <td class="qty">${p.pedir} <span class="unit">${p.unidad}</span></td>`;
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  div.appendChild(table);
+  return div;
+}
+
+async function cargarTodo() {
+  document.getElementById("loading").style.display = "block";
+  document.getElementById("error-box").style.display = "none";
+  document.getElementById("resumen").style.display = "none";
+  document.getElementById("proveedores-container").style.display = "none";
+  document.getElementById("proveedores-container").innerHTML = "";
+  document.getElementById("status").textContent = "Actualizando...";
+
+  try {
+    const res = await fetch(APPS_SCRIPT_URL);
+    if (!res.ok) throw new Error("Error HTTP " + res.status);
+    const data = await res.json();
+
+    const resultados = HOJAS.map(nombre => ({
+      nombre,
+      productos: parsearProductos(data[nombre] || [])
+    }));
+
+    // Resumen
+    const grid = document.getElementById("resumen-grid");
+    grid.innerHTML = "";
+    let total = 0;
+    resultados.forEach(r => {
+      total += r.productos.length;
+      const item = document.createElement("div");
+      item.className = "resumen-item";
+      item.innerHTML = `${r.nombre} <span class="badge ${r.productos.length === 0 ? "cero" : ""}">${r.productos.length}</span>`;
+      grid.appendChild(item);
+    });
+    document.getElementById("total-general").textContent = `TOTAL: ${total} artículos a pedir`;
+    document.getElementById("resumen").style.display = "block";
+
+    // Proveedores
+    const container = document.getElementById("proveedores-container");
+    resultados.forEach(r => container.appendChild(renderProveedor(r.nombre, r.productos)));
+    container.style.display = "block";
+
+    document.getElementById("loading").style.display = "none";
+    const ahora = new Date().toLocaleTimeString("es-MX", {hour:"2-digit", minute:"2-digit"});
+    document.getElementById("status").textContent = `Actualizado a las ${ahora}`;
+
+  } catch(e) {
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("error-box").style.display = "block";
+    document.getElementById("status").textContent = "Error al cargar";
+    console.error(e);
+  }
+}
+
+cargarTodo();
+</script>
+</body>
+</html>
