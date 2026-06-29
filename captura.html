@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Captura de Inventario · Lidia Gourmet</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f0f2f5; color: #222; padding-bottom: 110px; }
+  .header { background: #1A5276; color: #fff; padding: 16px; text-align: center; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 6px rgba(0,0,0,.3); }
+  .header h1 { font-size: 18px; }
+  .header p { font-size: 12px; opacity: .85; margin-top: 4px; }
+  .progress-wrap { background: rgba(255,255,255,.25); border-radius: 10px; height: 8px; margin-top: 10px; overflow: hidden; }
+  .progress-bar { background: #2ECC71; height: 100%; width: 0; transition: width .3s; }
+  .loading { text-align: center; padding: 40px; color: #666; }
+  .spinner { width: 36px; height: 36px; border: 4px solid #ddd; border-top-color: #1E8449; border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .aviso { margin: 12px; padding: 10px 12px; border-radius: 8px; font-size: 13px; display: none; }
+  .aviso.info { background: #EBF5FB; color: #1A5276; display: block; }
+  .aviso.warn { background: #FEF9E7; color: #7D6608; display: block; }
+  .aviso.ok { background: #EAFAF1; color: #145A32; display: block; }
+  .cat { margin: 12px; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+  .cat-h { background: #1E8449; color: #fff; padding: 11px 14px; font-size: 15px; font-weight: bold; }
+  table { width: 100%; border-collapse: collapse; background: #fff; }
+  td { padding: 8px 10px; font-size: 14px; border-bottom: 1px solid #eee; vertical-align: middle; }
+  tr:nth-child(even) td { background: #fafafa; }
+  .prod { width: 60%; }
+  .prod .u { font-size: 11px; color: #999; }
+  .ideal { font-size: 11px; color: #2471A3; white-space: nowrap; }
+  input.stock { width: 70px; padding: 9px; font-size: 17px; text-align: center; border: 2px solid #ccc; border-radius: 8px; }
+  input.stock:focus { border-color: #1E8449; outline: none; background: #F4FBF6; }
+  input.stock.filled { border-color: #1E8449; background: #EAFAF1; }
+  tr.obsrow td { padding-top: 0; padding-bottom: 10px; }
+  input.obs { width: 100%; padding: 7px 9px; font-size: 12px; border: 1px solid #ddd; border-radius: 6px; background: #fffdf5; }
+  input.obs:focus { outline: none; border-color: #E0A800; background: #fffbe9; }
+  .bar { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; box-shadow: 0 -2px 8px rgba(0,0,0,.18); padding: 10px 12px; display: flex; gap: 8px; }
+  .bar button { flex: 1; border: none; border-radius: 10px; padding: 14px 8px; font-size: 14px; font-weight: bold; color: #fff; cursor: pointer; }
+  .btn-save { background: #2471A3; }
+  .btn-done { background: #1E8449; }
+  .bar button:disabled { opacity: .5; }
+  .who { margin: 12px; }
+  .who input { width: 100%; padding: 11px; font-size: 15px; border: 2px solid #ccc; border-radius: 8px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>📝 Captura de Inventario</h1>
+  <p id="sub">Anota cuánto HAY hoy de cada producto</p>
+  <div class="progress-wrap"><div class="progress-bar" id="pbar"></div></div>
+</div>
+
+<div class="loading" id="loading"><div class="spinner"></div>Cargando inventario...</div>
+<div class="aviso" id="aviso"></div>
+<div class="who" id="whoBox" style="display:none">
+  <input id="quien" placeholder="Tu nombre (gerente)" autocomplete="name">
+</div>
+<div id="cont"></div>
+
+<div class="bar" id="bar" style="display:none">
+  <button class="btn-save" id="btnSave" onclick="guardar(false)">💾 Guardar avance</button>
+  <button class="btn-done" id="btnDone" onclick="guardar(true)">✅ Terminé → avisar</button>
+</div>
+
+<script>
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxJIjXq5c2V1143ysphCD61iYL2DNnEjoesb3IQI5KZvMzLqrpXzBZY-PlYfHOBhfO1/exec";
+const LS_KEY = "captura_borrador_v2";
+
+const DEMO = { actualizado:"(demo)", categorias:[
+  { nombre:"🧀 Cremería", items:[
+    {fila:4,nombre:"Q. Amarillo",unidad:"unidad",ideal:5,actual:null},
+    {fila:5,nombre:"Q. Oaxaca",unidad:"kg",ideal:6,actual:null},
+    {fila:6,nombre:"Tocino",unidad:"kg",ideal:4,actual:null,obs:"Marca buena, la otra no sirve"} ]},
+  { nombre:"🥤 Coca", items:[
+    {fila:4,nombre:"Coca 600",unidad:"paquete",ideal:7,actual:null},
+    {fila:5,nombre:"Coca Zero",unidad:"paquete",ideal:3,actual:null} ]},
+]};
+
+let DATA = null;
+
+function setAviso(txt, tipo){ const a=document.getElementById("aviso"); a.textContent=txt; a.className="aviso "+tipo; }
+function attr(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
+function borrador(){ try { return JSON.parse(localStorage.getItem(LS_KEY)||"{}"); } catch(e){ return {}; } }
+function guardarBorrador(){
+  const d={}; document.querySelectorAll("input.stock").forEach(i=>{ if(i.value!=="") d[i.dataset.k]=i.value; });
+  document.querySelectorAll("input.obs").forEach(i=>{ if(i.value!=="") d[i.dataset.k]=i.value; });
+  d.__quien = document.getElementById("quien").value || "";
+  try { localStorage.setItem(LS_KEY, JSON.stringify(d)); } catch(e){}
+}
+
+function progreso(){
+  const tot=document.querySelectorAll("input.stock").length;
+  let n=0; document.querySelectorAll("input.stock").forEach(i=>{ if(i.value!==""){n++; i.classList.add("filled");} else i.classList.remove("filled"); });
+  document.getElementById("pbar").style.width = tot? (n/tot*100)+"%":"0";
+  document.getElementById("sub").textContent = n+" de "+tot+" productos capturados";
+}
+
+function render(){
+  const cont=document.getElementById("cont"); cont.innerHTML="";
+  const b=borrador();
+  document.getElementById("quien").value = b.__quien || "";
+  DATA.categorias.forEach(cat=>{
+    if(!cat.items.length) return;
+    const div=document.createElement("div"); div.className="cat";
+    div.innerHTML=`<div class="cat-h">${cat.nombre}</div>`;
+    const t=document.createElement("table");
+    cat.items.forEach(it=>{
+      const key=cat.nombre+"||"+it.fila;
+      const saved = b[key];
+      const val = (saved!==undefined)? saved : (it.actual!==null? it.actual : "");
+      const obsSaved = b[key+"__obs"];
+      const obsVal = (obsSaved!==undefined)? obsSaved : (it.obs||"");
+      const tr=document.createElement("tr");
+      tr.innerHTML=`<td class="prod">${it.nombre} <span class="u">${it.unidad||""}</span></td>
+        <td class="ideal">ideal ${it.ideal}</td>
+        <td><input class="stock" type="number" inputmode="decimal" min="0" step="0.5"
+             data-k="${key}" data-cat="${cat.nombre}" data-fila="${it.fila}" value="${attr(val)}"></td>`;
+      t.appendChild(tr);
+      const tr2=document.createElement("tr"); tr2.className="obsrow";
+      tr2.innerHTML=`<td colspan="3"><input class="obs" type="text" maxlength="60"
+             data-k="${key}__obs" data-cat="${cat.nombre}" data-fila="${it.fila}"
+             placeholder="📝 Observación para compras (opcional)" value="${attr(obsVal)}"></td>`;
+      t.appendChild(tr2);
+    });
+    div.appendChild(t); cont.appendChild(div);
+  });
+  document.querySelectorAll("input.stock").forEach(i=>{
+    i.addEventListener("input", ()=>{ guardarBorrador(); progreso(); });
+  });
+  document.querySelectorAll("input.obs").forEach(i=>{
+    i.addEventListener("input", guardarBorrador);
+  });
+  document.getElementById("quien").addEventListener("input", guardarBorrador);
+  document.getElementById("whoBox").style.display="block";
+  document.getElementById("bar").style.display="flex";
+  progreso();
+}
+
+async function cargar(){
+  try{
+    const res=await fetch(APPS_SCRIPT_URL);
+    if(!res.ok) throw new Error("HTTP "+res.status);
+    DATA=await res.json();
+    setAviso("Inventario cargado. Captura lo que HAY hoy; lo que falte se pedirá solo.","info");
+  }catch(e){
+    DATA=DEMO;
+    setAviso("⚠️ Sin conexión con la hoja: mostrando ejemplo. Verifica internet o la URL del script.","warn");
+  }
+  document.getElementById("loading").style.display="none";
+  render();
+}
+
+function recolectar(){
+  const map={};
+  document.querySelectorAll("input.stock").forEach(i=>{
+    const k=i.dataset.cat+"|"+i.dataset.fila;
+    map[k]={ categoria:i.dataset.cat, fila:Number(i.dataset.fila), actual:i.value===""?null:Number(i.value) };
+  });
+  document.querySelectorAll("input.obs").forEach(i=>{
+    const k=i.dataset.cat+"|"+i.dataset.fila;
+    if(map[k]) map[k].obs = i.value;
+  });
+  return Object.values(map);
+}
+
+async function guardar(terminado){
+  const updates=recolectar();
+  const quien=document.getElementById("quien").value || "Gerente";
+  const btnS=document.getElementById("btnSave"), btnD=document.getElementById("btnDone");
+  btnS.disabled=btnD.disabled=true;
+  setAviso(terminado? "Enviando y avisando a compras...":"Guardando avance...","info");
+  try{
+    await fetch(APPS_SCRIPT_URL, {
+      method:"POST",
+      headers:{ "Content-Type":"text/plain;charset=utf-8" },
+      body: JSON.stringify({ updates, terminado, quien })
+    });
+    if(terminado){
+      setAviso("✅ ¡Listo! Conteo enviado y compras ya recibió la alerta.","ok");
+      try{ localStorage.removeItem(LS_KEY); }catch(e){}
+    } else {
+      setAviso("💾 Avance guardado. Puedes seguir capturando.","ok");
+    }
+  }catch(e){
+    setAviso("⚠️ No se pudo enviar (sin conexión). Tu captura quedó guardada en este teléfono; intenta de nuevo con internet.","warn");
+  }
+  btnS.disabled=btnD.disabled=false;
+}
+
+cargar();
+</script>
+</body>
+</html>
